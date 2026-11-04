@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+data/train.csv
+data/test.csv
+mlruns/
+mlflow.db
