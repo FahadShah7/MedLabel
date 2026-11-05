@@ -33,6 +33,8 @@ def validate(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {missing}")
     if df[["question", "context", "label"]].isnull().any().any():
         raise ValueError("Missing values found")
+    if df["pubid"].duplicated().any():
+        raise ValueError("Duplicate pubid values found")
     for col in ("question", "context"):
         if (df[col].str.strip() == "").any():
             raise ValueError(f"Empty text in column '{col}'")

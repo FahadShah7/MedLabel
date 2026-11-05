@@ -25,6 +25,12 @@ def test_validate_rejects_missing_value():
         validate(make_df(question=None))
 
 
+def test_validate_rejects_duplicate_pubid():
+    df = pd.concat([make_df(), make_df()], ignore_index=True)
+    with pytest.raises(ValueError, match="Duplicate"):
+        validate(df)
+
+
 def test_validate_rejects_empty_text():
     with pytest.raises(ValueError, match="Empty"):
         validate(make_df(context="   "))
