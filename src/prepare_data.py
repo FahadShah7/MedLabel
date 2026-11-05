@@ -10,6 +10,7 @@ DATASET_NAME = "qiaojin/PubMedQA"
 DATASET_CONFIG = "pqa_labeled"
 VALID_LABELS = {"yes", "no", "maybe"}
 SEED = 42
+TEST_SIZE = 0.2
 
 
 def load_raw() -> pd.DataFrame:
@@ -46,7 +47,7 @@ def validate(df: pd.DataFrame) -> pd.DataFrame:
 
 def split_and_save(df: pd.DataFrame):
     train, test = train_test_split(
-        df, test_size=0.2, stratify=df["label"], random_state=SEED
+        df, test_size=TEST_SIZE, stratify=df["label"], random_state=SEED
     )
     OUT_DIR.mkdir(exist_ok=True)
     train.to_csv(OUT_DIR / "train.csv", index=False)
