@@ -56,12 +56,27 @@ def test_predict_rejects_whitespace_question(client):
 def test_explain_returns_three_passages(client):
     r = client.post("/explain", json={"question": "Does smoking cause lung cancer?"})
     assert r.status_code == 200
-    assert len(r.json()["passages"]) == 3
+    passages = r.json()["passages"]
+    assert len(passages) == 3
+    for p in passages:
+        assert isinstance(p["pubid"], int)
+        assert isinstance(p["score"], float)
+        assert len(p["passage"].strip()) > 0
+
+
+def test_predict_with_unseen_vocabulary(client):
+    r = client.post(
+        "/predict",
+        json={"question": "Does zzzquantumnanobio therapy prevent pseudopseudohypoparathyroidism?"},
+    )
+    assert r.status_code == 200
+    assert r.json()["label"] in {"yes", "no", "maybe"}
 
 
 def test_metrics_counts_requests(client):
     before = client.get("/metrics").json()["request_count"]
     r = client.get("/health")
     assert "x-response-time-ms" in r.headers
-    after = client.get("/metrics").json()["request_count"]
-    assert after > before
+    metrics_data = client.get("/metrics").json()
+    assert metrics_data["request_count"] > before
+    assert metrics_data["avg_latency_ms"] >= 0.0
