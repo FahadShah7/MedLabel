@@ -6,12 +6,14 @@ from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 
 OUT_DIR = Path("data")
+DATASET_NAME = "qiaojin/PubMedQA"
+DATASET_CONFIG = "pqa_labeled"
 VALID_LABELS = {"yes", "no", "maybe"}
 SEED = 42
 
 
 def load_raw() -> pd.DataFrame:
-    ds = load_dataset("qiaojin/PubMedQA", "pqa_labeled", split="train")
+    ds = load_dataset(DATASET_NAME, DATASET_CONFIG, split="train")
     rows = [
         {
             "pubid": ex["pubid"],
