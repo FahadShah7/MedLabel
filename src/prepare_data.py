@@ -28,6 +28,7 @@ def load_raw() -> pd.DataFrame:
 
 
 def validate(df: pd.DataFrame) -> pd.DataFrame:
+    """Raise ValueError if the data is unusable; otherwise return it unchanged."""
     required_cols = {"pubid", "question", "context", "label"}
     missing = required_cols - set(df.columns)
     if missing:
@@ -57,6 +58,7 @@ def split_and_save(df: pd.DataFrame):
 
 
 def profile(df: pd.DataFrame) -> dict:
+    """Summarise row count, class balance and average text length."""
     return {
         "rows": len(df),
         "label_counts": df["label"].value_counts().to_dict(),
