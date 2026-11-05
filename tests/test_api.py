@@ -46,6 +46,10 @@ def test_predict_rejects_missing_question(client):
     assert client.post("/predict", json={}).status_code == 422
 
 
+def test_predict_rejects_whitespace_question(client):
+    assert client.post("/predict", json={"question": "     "}).status_code == 422
+
+
 def test_explain_returns_three_passages(client):
     r = client.post("/explain", json={"question": "Does smoking cause lung cancer?"})
     assert r.status_code == 200
@@ -54,6 +58,7 @@ def test_explain_returns_three_passages(client):
 
 def test_metrics_counts_requests(client):
     before = client.get("/metrics").json()["request_count"]
-    client.get("/health")
+    r = client.get("/health")
+    assert "x-response-time-ms" in r.headers
     after = client.get("/metrics").json()["request_count"]
     assert after > before

@@ -59,8 +59,10 @@ app = FastAPI(title="MedLabel", lifespan=lifespan)
 async def track_metrics(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
+    latency = time.perf_counter() - start
     stats["requests"] += 1
-    stats["total_latency"] += time.perf_counter() - start
+    stats["total_latency"] += latency
+    response.headers["X-Response-Time-Ms"] = f"{round(latency * 1000, 2)}"
     return response
 
 
