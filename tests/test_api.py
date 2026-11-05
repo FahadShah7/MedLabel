@@ -27,6 +27,9 @@ def test_predict_returns_valid_label(client):
     assert body["label"] in {"yes", "no", "maybe"}
     assert 0.0 <= body["confidence"] <= 1.0
     assert body["context_source"] == "retrieved"
+    assert "probabilities" in body
+    assert set(body["probabilities"].keys()) == {"yes", "no", "maybe"}
+    assert round(sum(body["probabilities"].values()), 2) == 1.0
 
 
 def test_predict_uses_provided_context(client):

@@ -31,7 +31,10 @@ def load_corpus(data_dir: Path) -> list[dict]:
 
 
 def retrieve(question: str, k: int = 3) -> list[dict]:
-    scores = state["bm25"].get_scores(tokenize(question))
+    tokens = tokenize(question)
+    if not tokens or "bm25" not in state or not state.get("corpus"):
+        return []
+    scores = state["bm25"].get_scores(tokens)
     top = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
     return [
         {
@@ -45,6 +48,8 @@ def retrieve(question: str, k: int = 3) -> list[dict]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(f"Model artifact not found at {MODEL_PATH}")
     state["model"] = joblib.load(MODEL_PATH)  # loaded once, at startup
     state["corpus"] = load_corpus(DATA_DIR)
     state["bm25"] = BM25Okapi([tokenize(r["context"]) for r in state["corpus"]])
@@ -79,12 +84,13 @@ class PredictResponse(BaseModel):
     label: str
     confidence: float
     context_source: str
+    probabilities: dict[str, float] = Field(default_factory=dict)
 
 
 class Passage(BaseModel):
-    pubid: int
-    score: float
-    passage: str
+    pubid: int = Field(..., description="PubMed identifier")
+    score: float = Field(..., description="BM25 relevance score")
+    passage: str = Field(..., description="Passage context text")
 
 
 class ExplainResponse(BaseModel):
@@ -107,17 +113,21 @@ def metrics():
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
     if req.context:
-        context, source = req.context, "provided"
+        context, source = req.context.strip(), "provided"
     else:
-        context = " ".join(p["passage"] for p in retrieve(req.question))
+        passages = retrieve(req.question)
+        context = " ".join(p["passage"] for p in passages) if passages else ""
         source = "retrieved"
     model = state["model"]
-    probs = model.predict_proba([f"{req.question} {context}"])[0]
+    probs = model.predict_proba([f"{req.question.strip()} {context}"])[0]
     best = int(probs.argmax())
+    classes = [str(c) for c in model.classes_]
+    prob_dict = {cls_name: round(float(prob), 4) for cls_name, prob in zip(classes, probs)}
     return PredictResponse(
         label=str(model.classes_[best]),
         confidence=round(float(probs[best]), 4),
         context_source=source,
+        probabilities=prob_dict,
     )
 
 
