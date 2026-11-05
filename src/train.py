@@ -27,13 +27,15 @@ CONFIGS = [
 
 def make_text(df: pd.DataFrame) -> list[str]:
     # Same convention the API uses: question + " " + context
-    return (df["question"] + " " + df["context"]).tolist()
+    return (df["question"].str.strip() + " " + df["context"].str.strip()).tolist()
 
 
 def build_pipeline(cfg: dict):
     vec = TfidfVectorizer(ngram_range=cfg["ngram"], sublinear_tf=True, min_df=2)
     if cfg["model"] == "logreg":
-        clf = LogisticRegression(C=cfg["C"], class_weight="balanced", max_iter=1000)
+        clf = LogisticRegression(
+            C=cfg["C"], class_weight="balanced", max_iter=1000, random_state=42
+        )
     else:
         clf = MultinomialNB(alpha=cfg["alpha"])
     return make_pipeline(vec, clf)
