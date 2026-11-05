@@ -59,6 +59,6 @@ Each member should add a short note on how they personally used AI. Edit your ow
 
 | Member | ERP ID | AI use and what I verified myself |
 |---|---|---|
-| Ameer Hamza | 28308 | _add your note_ |
+| Ameer Hamza | 28308 | Used AI assistance for small data-pipeline improvements and tests. Ran the tests and checked the split and class balance myself. |
 | Fahad Shah | 29255 | _add your note_ |
 | Ahmed Hassan Khan | 29299 | _add your note_ |
