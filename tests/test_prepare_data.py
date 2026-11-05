@@ -14,6 +14,12 @@ def test_validate_accepts_good_data():
     assert len(validate(make_df())) == 1
 
 
+def test_validate_rejects_missing_column():
+    df = make_df().drop(columns=["context"])
+    with pytest.raises(ValueError, match="Missing required columns"):
+        validate(df)
+
+
 def test_validate_rejects_missing_value():
     with pytest.raises(ValueError, match="Missing"):
         validate(make_df(question=None))

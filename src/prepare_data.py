@@ -25,6 +25,10 @@ def load_raw() -> pd.DataFrame:
 
 
 def validate(df: pd.DataFrame) -> pd.DataFrame:
+    required_cols = {"pubid", "question", "context", "label"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
     if df[["question", "context", "label"]].isnull().any().any():
         raise ValueError("Missing values found")
     for col in ("question", "context"):
