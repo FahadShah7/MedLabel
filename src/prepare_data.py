@@ -56,8 +56,18 @@ def split_and_save(df: pd.DataFrame):
     return train, test
 
 
+def profile(df: pd.DataFrame) -> dict:
+    return {
+        "rows": len(df),
+        "label_counts": df["label"].value_counts().to_dict(),
+        "avg_question_words": round(df["question"].str.split().str.len().mean(), 1),
+        "avg_context_words": round(df["context"].str.split().str.len().mean(), 1),
+    }
+
+
 def main():
     df = validate(load_raw())
+    print("profile:", profile(df))
     train, test = split_and_save(df)
     print(f"train={len(train)} test={len(test)}")
     print("train labels:", train["label"].value_counts(normalize=True).round(2).to_dict())

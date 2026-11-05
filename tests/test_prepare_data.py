@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src import prepare_data
-from src.prepare_data import split_and_save, validate
+from src.prepare_data import profile, split_and_save, validate
 
 
 def make_df(**overrides):
@@ -51,3 +51,10 @@ def test_split_is_stratified_and_reproducible(tmp_path, monkeypatch):
     assert test["label"].value_counts().to_dict() == {"yes": 12, "no": 6, "maybe": 2}
     train_again, _ = split_and_save(df)
     assert list(train["pubid"]) == list(train_again["pubid"])
+
+
+def test_profile_reports_class_balance():
+    stats = profile(make_df())
+    assert stats["rows"] == 1
+    assert stats["label_counts"] == {"yes": 1}
+    assert stats["avg_question_words"] == 3
