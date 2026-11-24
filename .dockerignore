@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+.cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+mlflow.db
+mlruns
+mlartifacts
+data/train.csv
+data/test.csv
+docs
+tests
+*.pptx
+*.md
+.env
