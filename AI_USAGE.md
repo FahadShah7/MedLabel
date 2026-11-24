@@ -53,6 +53,21 @@ These are things we found or know about, and they are also listed in the README:
 - **MedRAG**: the retrieval idea is reused from the earlier MedRAG project and credited in the README. No code was copied without attribution.
 - **Libraries:** scikit-learn, MLflow, FastAPI, Pydantic, rank-bm25, pytest, ruff.
 
+## Milestone 2
+
+Tool: **Cursor** (agent mode, Claude model), plus **Claude in Chrome** to navigate the MLflow UI and take screenshots.
+
+| Area | What the AI did | What we did |
+|---|---|---|
+| Gemini integration (`src/llm.py`) | Drafted the Gemini Decision 1 and generative Gemini calls, the three prompt variants and the LLM-as-a-judge rubric, after reading the Decisions API docs | Chose the models and prompt wording, created the API key, ran real requests and checked the answers |
+| LLM evaluation (`src/evaluate_llm.py`) | Drafted the one-factor-at-a-time sweeps, metrics (macro-F1, calibration error, label stability, latency, tokens) and MLflow logging | Ran the sweeps, compared runs in the MLflow UI and wrote up the findings |
+| Training (`src/train.py`) | Added six new configurations, artifact logging and Model Registry | Re-ran training and confirmed the Milestone 1 numbers reproduce |
+| API, Docker, CI, deployment | Drafted `/decide`, `/answer`, `/stats`, the Dockerfile, `ci.yml`, `render.yaml` and `RUNBOOK.md` | Deployed to Render, checked CI runs, tested the live endpoints |
+| Tests | Drafted Gemini tests with a fake client and `/stats` tests | Ran them locally and in CI |
+| Debugging | Worked around Windows Application Control blocking compiled packages and a full system drive | Approved and verified the fixes |
+
+AI was not used to produce any evaluation numbers. All metrics in the README come from our own MLflow runs.
+
 ## Team members
 
 Each member should add a short note on how they personally used AI. Edit your own line only.
