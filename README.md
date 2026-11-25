@@ -106,7 +106,7 @@ For the Gemini models there is no training, so we evaluate **inference**. `src/e
 | Sweep | What changes | Runs |
 |---|---|---|
 | `prompts` | Prompt phrasing: `plain` (bare question), `criteria` (adds definitions of yes, no and maybe), `expert` (system instruction as an expert reviewer). Run for both Gemini Decision 1 and generative Gemini | 6 |
-| `models` | TF-IDF baseline vs `gemini-decision-1` vs `gemini-3.5-flash-lite` vs `gemini-3.8-flash` | 4 |
+| `models` | TF-IDF baseline vs `gemini-decision-1` vs `gemini-3.5-flash-lite` vs `gemini-3.1-flash-lite` | 4 |
 | `temperature` | Generative temperature 0.0, 0.5, 1.0, 1.5, 2.0, each run twice to measure label stability | 5 |
 | `context` | No abstract, BM25-retrieved abstracts (excluding the question's own), the gold abstract. For all three model types | 9 |
 | `parameters` | `top_p` 0.3 vs 0.95 at temperature 1.0; number of retrieved passages k = 1, 3, 5 | 5 |
@@ -115,7 +115,28 @@ Every run logs its parameters, metrics (macro-F1, accuracy, per-class F1, invali
 
 Baseline: `gemini-3.5-flash-lite`, prompt `criteria`, temperature 0, top_p 0.95, gold abstract. Gemini Decision 1 scores options instead of generating text, so it has no temperature setting; it appears in the prompt, model, context and k sweeps.
 
-**Results:** _to be filled in from the MLflow runs._
+**Results** (50 questions: 28 yes, 17 no, 5 maybe):
+
+| Run | Macro-F1 | Accuracy | Calibration error | "Maybe" rate |
+|---|---|---|---|---|
+| Gemini Decision 1, `plain` prompt | **0.613** | **0.76** | **0.043** | 0.10 |
+| Generative `gemini-3.5-flash-lite`, `criteria` prompt (baseline) | 0.587 | 0.72 | 0.205 | 0.16 |
+| Gemini Decision 1, `criteria` prompt | 0.582 | 0.68 | 0.089 | 0.26 |
+| Generative, `plain` prompt | 0.549 | 0.76 | 0.178 | 0.06 |
+| Gemini Decision 1, `expert` prompt | 0.544 | 0.62 | 0.147 | 0.30 |
+| Generative, `expert` prompt | 0.499 | 0.68 | 0.259 | 0.08 |
+| TF-IDF + logistic regression (gold abstract) | 0.340 | 0.48 | 0.105 | 0.06 |
+| Gemini Decision 1, retrieved context (k = 5) | 0.252 | 0.32 | 0.218 | 0.20 |
+| Generative, retrieved context | 0.197 | 0.36 | 0.652 | 0.02 |
+| Generative, no context | 0.061 | 0.10 | 0.320 | 1.00 |
+
+- **Gemini Decision 1 is the best model**: highest macro-F1 and by far the best calibrated. Its probabilities match how often it is right, while the generative model's self-reported confidence is overconfident (calibration error about 0.2).
+- **Simpler prompts work best for the decision model.** Adding definitions or an expert persona pushes it towards "maybe" and lowers accuracy. For the generative model the `criteria` prompt helps.
+- **Evidence matters more than anything else.** With no abstract the generative model answers "maybe" every time. Retrieved abstracts from other questions mislead both Gemini models, and more passages (k = 1 → 5) helps only slightly.
+- **Both Gemini models beat the classical baseline** by about 0.25 macro-F1 on the same questions.
+- **Rationales are faithful:** LLM-as-a-judge faithfulness is 0.86–0.88 when the model sees an abstract, and 0.41 without one.
+- At temperature 0 the generative model still changed its label on 6% of questions between repeats (label stability 0.94).
+- Latency figures include waits caused by free-tier rate limits, so they are not comparable between runs. With only 5 "maybe" questions, differences of a few points are not significant.
 
 ## API
 
@@ -188,7 +209,7 @@ Deployment is on [Render](https://render.com) using `render.yaml`: a Docker web 
 
 - **What:** a systematic comparison of three ways to answer the same yes/no/maybe question: TF-IDF with logistic regression, Gemini Decision 1 (a scoring model with calibrated probabilities), and generative Gemini (label plus a written rationale). Every variation is an MLflow run.
 - **Why it suits this project:** the task is a closed three-way decision, which is exactly what Gemini Decision 1 is built for, while generative models add an explanation that a clinician-facing tool would need. The course asks LLM projects to test prompts, models, parameters and temperature; our sweeps cover all four, plus the effect of the evidence itself (no abstract vs retrieved vs gold).
-- **What is built and compared:** 11 classical training runs with model registry, and 29 LLM inference runs comparing accuracy (macro-F1), calibration error, label stability across repeats, latency, token cost and rationale faithfulness judged by an LLM.
+- **What is built and compared:** 11 classical training runs with model registry, and 29 LLM inference run configurations comparing accuracy (macro-F1), calibration error, label stability across repeats, latency, token cost and rationale faithfulness judged by an LLM.
 - **How it is demonstrated:** the MLflow UI (run comparison charts, per-run confusion matrices, prediction tables, traces), and the live `/predict`, `/decide` and `/answer` endpoints answering the same question side by side.
 - **Next steps for the final presentation:** run the sweeps on the full 200-question test set, add a confidence threshold that routes low-confidence answers to "needs human review", and use the faithfulness judge to choose the prompt used by `/answer`.
 
