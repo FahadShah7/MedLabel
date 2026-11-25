@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -62,7 +63,10 @@ def sweeps() -> dict[str, list[tuple[str, dict]]]:
         "models": [
             ("tfidf_logreg", tfidf()),
             ("gemini_decision_1", dec()),
-            *[(m.replace("-", "_").replace(".", "_"), gen(model=m)) for m in llm.GENERATIVE_MODELS],
+            *[
+                (m.replace("-", "_").replace(".", "_"), gen(model=m))
+                for m in llm.EVAL_GENERATIVE_MODELS
+            ],
         ],
         "temperature": [
             (f"gen_temp_{t}", gen(temperature=t, repeats=2)) for t in (0.0, 0.5, 1.0, 1.5, 2.0)
@@ -73,7 +77,7 @@ def sweeps() -> dict[str, list[tuple[str, dict]]]:
             *[(f"gen_context_{c}", gen(context=c)) for c in ("none", "retrieved", "abstract")],
         ],
         "parameters": [
-            *[(f"gen_top_p_{p}", gen(temperature=1.0, top_p=p, repeats=2)) for p in (0.3, 0.95)],
+            *[(f"gen_top_p_{p}", gen(temperature=1.0, top_p=p)) for p in (0.3, 0.95)],
             *[(f"decision_retrieved_k{k}", dec(context="retrieved", k=k)) for k in (1, 3, 5)],
         ],
     }
@@ -91,9 +95,13 @@ class Cache:
     def __init__(self, path: Path):
         self.path = path
         self.data: dict[str, dict] = {}
+        self.lock = threading.Lock()
         if path.exists():
             for line in path.read_text(encoding="utf-8").splitlines():
-                row = json.loads(line)
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # a line cut off by an interrupted run is simply re-requested
                 self.data[row["key"]] = row["value"]
 
     @staticmethod
@@ -104,10 +112,32 @@ class Cache:
         return self.data.get(key)
 
     def put(self, key, value):
-        self.data[key] = value
-        self.path.parent.mkdir(exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"key": key, "value": value}) + "\n")
+        with self.lock:
+            self.data[key] = value
+            self.path.parent.mkdir(exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"key": key, "value": value}) + "\n")
+
+
+class RateLimiter:
+    """Spaces out calls across threads to stay under a requests-per-minute quota."""
+
+    def __init__(self, rpm: float):
+        self.interval = 60.0 / rpm if rpm > 0 else 0.0
+        self.lock = threading.Lock()
+        self.next_at = 0.0
+
+    def wait(self):
+        if not self.interval:
+            return
+        with self.lock:
+            now = time.monotonic()
+            delay = max(0.0, self.next_at - now)
+            self.next_at = max(now, self.next_at) + self.interval
+        time.sleep(delay)
+
+
+GENERATIVE_LIMITER = RateLimiter(0)
 
 
 class Contexts:
@@ -148,6 +178,7 @@ def predict_one(client, cfg: dict, question: str, context: str, repeat: int, cac
     if engine(cfg) == "decisions_api":
         out = llm.decide(client, question, context, prompt_id=cfg["prompt"])
     else:
+        GENERATIVE_LIMITER.wait()
         out = llm.generate(
             client,
             question,
@@ -341,27 +372,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=50, help="questions from the test set")
     parser.add_argument("--sweeps", nargs="*", default=list(sweeps()), choices=list(sweeps()))
+    parser.add_argument("--runs", nargs="*", help="only these run names (default: all in sweeps)")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--no-judge", dest="judge", action="store_false")
     parser.add_argument("--trace-n", type=int, default=3, help="traces logged per run")
+    parser.add_argument(
+        "--gen-rpm", type=float, default=14, help="generative requests per minute (0 = no limit)"
+    )
     args = parser.parse_args()
+    GENERATIVE_LIMITER.__init__(args.gen_rpm)
 
     items, corpus = load_eval_set(args.limit)
     contexts = Contexts(corpus)
     cache = Cache(CACHE_PATH)
     baseline = joblib.load(BASELINE_MODEL)
-    needs_gemini = any(
-        engine(cfg) != "sklearn" for s in args.sweeps for _, cfg in sweeps()[s]
-    )
+    selected = [
+        (sweep, name, cfg)
+        for sweep in args.sweeps
+        for name, cfg in sweeps()[sweep]
+        if not args.runs or name in args.runs
+    ]
+    needs_gemini = any(engine(cfg) != "sklearn" for _, _, cfg in selected)
     client = llm.get_client() if needs_gemini else None
 
     mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
     mlflow.set_experiment(EXPERIMENT)
     mix = items["label"].value_counts().to_dict()
     print(f"Evaluating {len(items)} test questions, label mix {mix}")
-    for sweep in args.sweeps:
-        for name, cfg in sweeps()[sweep]:
-            run_config(name, sweep, cfg, items, contexts, client, cache, baseline, args)
+    for sweep, name, cfg in selected:
+        run_config(name, sweep, cfg, items, contexts, client, cache, baseline, args)
 
 
 if __name__ == "__main__":

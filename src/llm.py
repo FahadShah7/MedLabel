@@ -12,7 +12,9 @@ import time
 
 LABELS = ("yes", "no", "maybe")
 DECISION_MODEL = "gemini-decision-1"
-GENERATIVE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.8-flash")
+GENERATIVE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash")
+# gemini-3.8-flash allows only 20 requests a day on the free tier, too few for a 50-question sweep
+EVAL_GENERATIVE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
 DEFAULT_GENERATIVE_MODEL = "gemini-3.5-flash-lite"
 
 LABEL_CRITERIA = {
@@ -81,7 +83,7 @@ def _with_retry(fn, attempts: int = 6):
         except Exception as exc:  # the SDK raises different classes per API surface
             if i == attempts - 1 or not any(code in str(exc) for code in _RETRYABLE):
                 raise
-            time.sleep(min(2**i * 2, 60))
+            time.sleep(min(2**i * 5, 65))
 
 
 def _get(obj, name):
