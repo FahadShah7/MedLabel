@@ -73,6 +73,8 @@ On Windows without `make`, run the commands in the `Makefile` directly, for exam
 
 Only a 50-row sample (`data/sample.csv`) is committed. `prepare_data.py` downloads the full dataset and writes `data/train.csv` and `data/test.csv` (ignored by Git). It rejects missing columns, missing values, duplicate `pubid`s, empty text and unexpected labels before splitting. Macro-F1 is used because 55% of answers are "yes", so accuracy would reward a model that always says "yes".
 
+Edit
+
 ## Classical model results (MLflow experiment `medlabel`)
 
 Eleven runs. The first five are from Milestone 1; the other six each change one thing from the Milestone 1 winner.
