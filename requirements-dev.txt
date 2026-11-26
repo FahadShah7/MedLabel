@@ -1,0 +1,8 @@
+# Everything needed to prepare data, train, evaluate and test
+-r requirements.txt
+datasets>=3.0
+mlflow>=3.0
+matplotlib>=3.8
+pytest>=8.0
+httpx>=0.27
+ruff>=0.6

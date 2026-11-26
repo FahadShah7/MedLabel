@@ -13,7 +13,10 @@ def client():
 def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "model_loaded": True}
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["model_loaded"] is True
+    assert body["corpus_size"] > 0
 
 
 def test_model_loaded_with_expected_classes(client):
@@ -35,7 +38,10 @@ def test_predict_returns_valid_label(client):
 def test_predict_uses_provided_context(client):
     r = client.post(
         "/predict",
-        json={"question": "Does exercise help depression?", "context": "Exercise reduced symptoms."},
+        json={
+            "question": "Does exercise help depression?",
+            "context": "Exercise reduced symptoms.",
+        },
     )
     assert r.status_code == 200
     assert r.json()["context_source"] == "provided"
@@ -80,3 +86,19 @@ def test_metrics_counts_requests(client):
     metrics_data = client.get("/metrics").json()
     assert metrics_data["request_count"] > before
     assert metrics_data["avg_latency_ms"] >= 0.0
+
+
+def test_stats_tracks_requests_per_endpoint(client):
+    before = client.get("/stats").json()
+    client.post("/predict", json={"question": "Does aspirin reduce the risk of heart attack?"})
+    after = client.get("/stats").json()
+    assert after["request_count"] >= before["request_count"] + 2
+    assert after["by_endpoint"]["/predict"]["count"] >= 1
+    assert after["avg_latency_ms"] > 0
+    assert sum(after["predicted_labels"].values()) > sum(before["predicted_labels"].values())
+
+
+def test_stats_counts_errors(client):
+    before = client.get("/stats").json()["error_count"]
+    client.post("/predict", json={"question": "hi"})
+    assert client.get("/stats").json()["error_count"] == before + 1

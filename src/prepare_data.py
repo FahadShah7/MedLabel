@@ -62,8 +62,8 @@ def profile(df: pd.DataFrame) -> dict:
     return {
         "rows": len(df),
         "label_counts": df["label"].value_counts().to_dict(),
-        "avg_question_words": round(df["question"].str.split().str.len().mean(), 1),
-        "avg_context_words": round(df["context"].str.split().str.len().mean(), 1),
+        "avg_question_words": round(float(df["question"].str.split().str.len().mean()), 1),
+        "avg_context_words": round(float(df["context"].str.split().str.len().mean()), 1),
     }
 
 
