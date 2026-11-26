@@ -20,6 +20,24 @@
 
 ---
 
+## Member-to-Task Breakdown (Milestone 2)
+
+Each member edits their own row.
+
+| Member | Tasks & Deliverables | Associated Files / Artifacts |
+|---|---|---|
+| **Ameer Hamza**<br>`(28308)` | • Gemini integration: Gemini Decision 1 (Decisions API) and generative Gemini models with three prompt variants<br>• LLM inference evaluation in MLflow: sweeps over prompts, models, temperature, context and parameters, with LLM-as-a-judge faithfulness scoring<br>• Semantic search (Gemini embeddings) and hybrid search (reciprocal rank fusion with BM25), with recall@k and MRR in MLflow<br>• Expanded classical training to 11 tracked runs with confusion matrices, logged models and Model Registry (`champion` alias)<br>• `/decide`, `/answer` and `/stats` endpoints, request logging, Gemini tests with a fake client<br>• Dockerfile with healthcheck, GitHub Actions CI (lint, test, build, GHCR push), Render blueprint, runbook | • `src/llm.py`, `src/evaluate_llm.py`, `src/retrieval.py`, `src/build_index.py`, `src/train.py`, `src/app.py`<br>• `tests/test_gemini.py`, `tests/test_api.py`<br>• `Dockerfile`, `.github/workflows/ci.yml`, `render.yaml`, `RUNBOOK.md` |
+| **Fahad Shah**<br>`(29255)` | _To be filled in by Fahad_ | |
+| **Ahmed Hassan Khan**<br>`(29299)` | _To be filled in by Ahmed_ | |
+
+### Reflections (Milestone 2)
+
+- **Ameer Hamza:** _2-3 lines on what you built and what you learned._
+- **Fahad Shah:** _2-3 lines on what you built and what you learned._
+- **Ahmed Hassan Khan:** _2-3 lines on what you built and what you learned._
+
+---
+
 ## Contribution Summary
 
 - **Work Distribution:** All group members contributed equally (~33.3% each) across their respective domains (Data Preparation, Model Training, and Service Deployment).

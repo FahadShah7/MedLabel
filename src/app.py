@@ -1,22 +1,21 @@
 import json
 import logging
 import os
-import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 import joblib
-import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
-from rank_bm25 import BM25Okapi
 
 from src import llm
+from src.retrieval import INDEX_PATH, Retriever, load_corpus, load_index
 
 MODEL_PATH = Path(os.getenv("MODEL_PATH", "models/medlabel_v2.joblib"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
+EMBEDDINGS_PATH = Path(os.getenv("EMBEDDINGS_PATH", str(INDEX_PATH)))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("medlabel")
@@ -32,33 +31,21 @@ stats = {
 }
 
 
-def tokenize(text: str) -> list[str]:
-    return re.findall(r"\w+", text.lower())
+def embed_query(text: str):
+    return llm.embed(gemini_client(), [text], task_type="RETRIEVAL_QUERY")[0]
 
 
-def load_corpus(data_dir: Path) -> list[dict]:
-    """Use the full dataset if it has been downloaded, else the committed sample."""
-    files = [p for p in (data_dir / "train.csv", data_dir / "test.csv") if p.exists()]
-    if not files:
-        files = [data_dir / "sample.csv"]
-    df = pd.concat([pd.read_csv(p) for p in files]).drop_duplicates("pubid")
-    return df[["pubid", "context"]].to_dict("records")
-
-
-def retrieve(question: str, k: int = 3) -> list[dict]:
-    tokens = tokenize(question)
-    if not tokens or "bm25" not in state or not state.get("corpus"):
-        return []
-    scores = state["bm25"].get_scores(tokens)
-    top = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
-    return [
-        {
-            "pubid": int(state["corpus"][i]["pubid"]),
-            "score": round(float(scores[i]), 3),
-            "passage": state["corpus"][i]["context"],
-        }
-        for i in top
-    ]
+def retrieve(question: str, k: int = 3, method: str = "bm25") -> list[dict]:
+    retriever: Retriever = state["retriever"]
+    if method != "bm25" and retriever.embeddings is None:
+        raise HTTPException(status_code=503, detail="Semantic index is not available")
+    try:
+        return retriever.search(question, k=k, method=method)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Embedding request failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Gemini embedding request failed") from exc
 
 
 @asynccontextmanager
@@ -66,13 +53,19 @@ async def lifespan(app: FastAPI):
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Model artifact not found at {MODEL_PATH}")
     state["model"] = joblib.load(MODEL_PATH)  # loaded once, at startup
-    state["corpus"] = load_corpus(DATA_DIR)
-    state["bm25"] = BM25Okapi([tokenize(r["context"]) for r in state["corpus"]])
+    corpus = load_corpus(DATA_DIR)
+    embeddings = load_index(EMBEDDINGS_PATH, [r["pubid"] for r in corpus])
+    state["retriever"] = Retriever(corpus, embeddings=embeddings, embed_query=embed_query)
     try:
         state["gemini"] = llm.get_client()
     except llm.GeminiNotConfigured:
-        logger.info("GEMINI_API_KEY not set: /decide and /answer are disabled")
-    logger.info("Loaded %s, corpus of %d abstracts", MODEL_PATH.name, len(state["corpus"]))
+        logger.info("GEMINI_API_KEY not set: /decide, /answer and semantic search are disabled")
+    logger.info(
+        "Loaded %s, corpus of %d abstracts, semantic index %s",
+        MODEL_PATH.name,
+        len(corpus),
+        "loaded" if embeddings is not None else "missing",
+    )
     yield
     state.clear()
 
@@ -110,6 +103,10 @@ async def track_metrics(request: Request, call_next):
 class QuestionRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     question: str = Field(..., min_length=5, max_length=1000)
+    retrieval: Literal["bm25", "semantic", "hybrid"] = Field(
+        default="bm25", description="semantic and hybrid need GEMINI_API_KEY"
+    )
+    k: int = Field(default=3, ge=1, le=10, description="passages to retrieve")
 
 
 class PredictRequest(QuestionRequest):
@@ -134,7 +131,9 @@ class DecideResponse(PredictResponse):
 
 class Passage(BaseModel):
     pubid: int = Field(..., description="PubMed identifier")
-    score: float = Field(..., description="BM25 relevance score")
+    score: float = Field(
+        ..., description="BM25 score, cosine similarity or fused rank score, by method"
+    )
     passage: str = Field(..., description="Passage context text")
 
 
@@ -149,13 +148,14 @@ class AnswerResponse(BaseModel):
 
 class ExplainResponse(BaseModel):
     question: str
+    retrieval: str
     passages: list[Passage]
 
 
 def resolve_context(req: PredictRequest) -> tuple[str, str, list[dict]]:
     if req.context:
         return req.context.strip(), "provided", []
-    passages = retrieve(req.question)
+    passages = retrieve(req.question, k=req.k, method=req.retrieval)
     return " ".join(p["passage"] for p in passages), "retrieved", passages
 
 
@@ -175,8 +175,10 @@ def health():
         "status": "ok",
         "model_loaded": "model" in state,
         "model_version": MODEL_PATH.stem,
-        "corpus_size": len(state.get("corpus", [])),
+        "corpus_size": len(state["retriever"].records) if "retriever" in state else 0,
         "gemini_configured": "gemini" in state,
+        "semantic_index_loaded": "retriever" in state
+        and state["retriever"].embeddings is not None,
     }
 
 
@@ -270,4 +272,5 @@ def answer(req: AnswerRequest):
 
 @app.post("/explain", response_model=ExplainResponse)
 def explain(req: QuestionRequest):
-    return ExplainResponse(question=req.question, passages=retrieve(req.question))
+    passages = retrieve(req.question, k=req.k, method=req.retrieval)
+    return ExplainResponse(question=req.question, retrieval=req.retrieval, passages=passages)
