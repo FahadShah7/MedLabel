@@ -75,5 +75,5 @@ Each member should add a short note on how they personally used AI. Edit your ow
 | Member | ERP ID | AI use and what I verified myself |
 |---|---|---|
 | Ameer Hamza | 28308 | Used AI assistance for small data-pipeline improvements and tests. Ran the tests and checked the split and class balance myself. |
-| Fahad Shah | 29255 | _add your note_ |
-| Ahmed Hassan Khan | 29299 | _add your note_ |
+| Fahad Shah | 29255 | Used AI assistance to review Milestone 2 documentation and deployment steps. Verified the MLflow runs, Model Registry, and live Render endpoints myself. |
+| Ahmed Hassan Khan | 29299 | Used AI assistance for PowerShell/Docker command troubleshooting and preparing the Milestone 2 demo walkthrough. Ran the Docker build, healthcheck, `/stats` monitoring, and live Render endpoint checks myself. |

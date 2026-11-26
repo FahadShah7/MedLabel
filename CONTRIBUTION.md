@@ -27,14 +27,14 @@ Each member edits their own row.
 | Member | Tasks & Deliverables | Associated Files / Artifacts |
 |---|---|---|
 | **Ameer Hamza**<br>`(28308)` | • Gemini integration: Gemini Decision 1 (Decisions API) and generative Gemini models with three prompt variants<br>• LLM inference evaluation in MLflow: sweeps over prompts, models, temperature, context and parameters, with LLM-as-a-judge faithfulness scoring<br>• Semantic search (Gemini embeddings) and hybrid search (reciprocal rank fusion with BM25), with recall@k and MRR in MLflow<br>• Expanded classical training to 11 tracked runs with confusion matrices, logged models and Model Registry (`champion` alias)<br>• `/decide`, `/answer` and `/stats` endpoints, request logging, Gemini tests with a fake client<br>• Dockerfile with healthcheck, GitHub Actions CI (lint, test, build, GHCR push), Render blueprint, runbook | • `src/llm.py`, `src/evaluate_llm.py`, `src/retrieval.py`, `src/build_index.py`, `src/train.py`, `src/app.py`<br>• `tests/test_gemini.py`, `tests/test_api.py`<br>• `Dockerfile`, `.github/workflows/ci.yml`, `render.yaml`, `RUNBOOK.md` |
-| **Fahad Shah**<br>`(29255)` | _To be filled in by Fahad_ | |
-| **Ahmed Hassan Khan**<br>`(29299)` | _To be filled in by Ahmed_ | |
+| **Fahad Shah**<br>`(29255)` | • Reviewed and merged PR #3 (`fix/root-redirect`) into `main`<br>• Managed the GitHub repository, Render deployment configuration, and environment secrets<br>• Verified the 11 classical MLflow runs, Model Registry (`medlabel-classifier` / `champion`), and live API endpoints | • `README.md`, `render.yaml`, `models/medlabel_v2.joblib`<br>• PR #3 (`fix/root-redirect`) |
+| **Ahmed Hassan Khan**<br>`(29299)` | • Reviewed and merged PR #1 (`feat/llm-eval`) and PR #2 (`infra/docker-ci-deploy`) into `main`<br>• Tested the Docker build, `/health` container healthcheck, `/stats` monitoring, and live Render deployment<br>• Verified end-to-end API behavior and prepared the Milestone 2 demo walkthrough | • `src/app.py`, `Dockerfile`, `.github/workflows/ci.yml`<br>• PR #1 (`feat/llm-eval`), PR #2 (`infra/docker-ci-deploy`) |
 
 ### Reflections (Milestone 2)
 
-- **Ameer Hamza:** _2-3 lines on what you built and what you learned._
-- **Fahad Shah:** _2-3 lines on what you built and what you learned._
-- **Ahmed Hassan Khan:** _2-3 lines on what you built and what you learned._
+- **Ameer Hamza:** Built the Gemini Decision 1 and generative Gemini integration, MLflow inference sweeps with LLM-as-a-judge scoring, semantic and hybrid retrieval, and the Docker/CI/Render deployment pipeline. Learned how structured inference evaluation in MLflow highlights calibration and evidence gaps that classical metrics alone miss, and how to wire automated healthchecks and smoke tests into CI.
+- **Fahad Shah:** Managed the repository, Render deployment, and PR reviews for Milestone 2 while verifying our expanded MLflow runs and Model Registry setup. Learned how CI/CD with GitHub Actions and GHCR connects to automated cloud deployments and how model versioning supports clean rollbacks.
+- **Ahmed Hassan Khan:** Reviewed the LLM evaluation and Docker/CI pull requests, and verified the containerized FastAPI service locally and on Render. Learned how Docker healthchecks, in-memory request/latency monitoring (`/stats`), and automated CI checks work together to keep a deployed ML service reliable.
 
 ---
 
