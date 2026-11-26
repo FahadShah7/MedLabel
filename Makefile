@@ -1,4 +1,4 @@
-.PHONY: help setup data train eval mlflow test lint format check clean run docker-build docker-run
+.PHONY: help setup data train index eval mlflow test lint format check clean run docker-build docker-run
 
 IMAGE ?= medlabel
 
@@ -7,7 +7,8 @@ help:
 	@echo "  setup        - Create virtual environment and install dependencies"
 	@echo "  data         - Download PubMedQA, validate, and split data"
 	@echo "  train        - Train candidate models and log runs to MLflow"
-	@echo "  eval         - Evaluate Gemini prompts, models, parameters and temperature in MLflow"
+	@echo "  index        - Embed the abstracts with Gemini for semantic search"
+	@echo "  eval         - Evaluate Gemini prompts, models, parameters, temperature and retrieval"
 	@echo "  mlflow       - Open the MLflow UI at http://127.0.0.1:5000"
 	@echo "  test         - Run the pytest test suite"
 	@echo "  lint         - Run ruff linter checks"
@@ -28,8 +29,11 @@ data:
 train:
 	.venv/bin/python src/train.py
 
+index:
+	.venv/bin/python -m src.build_index
+
 eval:
-	.venv/bin/python -m src.evaluate_llm
+	.venv/bin/python -m src.evaluate_llm --retrieval-quality
 
 mlflow:
 	.venv/bin/mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5000

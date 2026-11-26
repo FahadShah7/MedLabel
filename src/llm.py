@@ -16,6 +16,8 @@ GENERATIVE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3
 # gemini-3.8-flash allows only 20 requests a day on the free tier, too few for a 50-question sweep
 EVAL_GENERATIVE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
 DEFAULT_GENERATIVE_MODEL = "gemini-3.5-flash-lite"
+EMBEDDING_MODEL = "gemini-embedding-001"
+EMBEDDING_DIM = 768
 
 LABEL_CRITERIA = {
     "yes": "The study's findings support the statement in the question.",
@@ -191,6 +193,42 @@ def generate(
     except (TypeError, ValueError, KeyError):
         pass  # counted as an invalid output by the caller
     return out
+
+
+def embed(
+    client,
+    texts: list[str],
+    task_type: str = "RETRIEVAL_QUERY",
+    batch_size: int = 100,
+    tokens_per_minute: int | None = None,
+) -> list[list[float]]:
+    """Gemini embeddings. Use RETRIEVAL_DOCUMENT for abstracts and RETRIEVAL_QUERY for questions.
+
+    tokens_per_minute paces the batches; the free tier allows 30,000 embedding tokens a minute.
+    """
+    from google.genai import types
+
+    config = types.EmbedContentConfig(task_type=task_type, output_dimensionality=EMBEDDING_DIM)
+    vectors = []
+    sent_tokens, started = 0, time.monotonic()
+    for start in range(0, len(texts), batch_size):  # the API takes at most 100 texts per request
+        batch = texts[start : start + batch_size]
+        if tokens_per_minute:
+            sent_tokens += sum(len(t) for t in batch) // 3  # rough, errs towards more tokens
+            due = sent_tokens / tokens_per_minute * 60
+            time.sleep(max(0.0, due - (time.monotonic() - started)))
+        result = _with_retry(
+            lambda: client.models.embed_content(
+                model=EMBEDDING_MODEL, contents=batch, config=config
+            )
+        )
+        if len(result.embeddings) != len(batch):  # some models merge a list into one embedding
+            raise RuntimeError(
+                f"{EMBEDDING_MODEL} returned {len(result.embeddings)} embeddings for "
+                f"{len(batch)} texts"
+            )
+        vectors += [list(e.values) for e in result.embeddings]
+    return vectors
 
 
 def judge_rationale(client, context: str, rationale: str) -> dict:
