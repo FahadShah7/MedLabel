@@ -13,10 +13,12 @@ flowchart LR
     A[PubMedQA<br/>1,000 labeled questions] --> B[prepare_data.py<br/>validate + stratified 80/20 split]
     B --> C[train.py<br/>11 TF-IDF runs in MLflow]
     C --> D[(models/medlabel_v2.joblib<br/>+ MLflow Model Registry)]
-    B --> L[evaluate_llm.py<br/>Gemini prompt, model, parameter,<br/>temperature sweeps in MLflow]
+    B --> L[evaluate_llm.py<br/>Gemini prompt, model, parameter,<br/>temperature, retrieval sweeps in MLflow]
     D --> E[FastAPI service<br/>src/app.py]
     B --> F[BM25 index<br/>built at startup]
+    B --> H[build_index.py<br/>Gemini embeddings of<br/>every abstract]
     F --> E
+    H --> E
     G[Gemini API<br/>Decision 1 + generative] --> E
     E --> P[/predict, /explain/]
     E --> Q[/decide, /answer/]
@@ -35,7 +37,7 @@ git clone https://github.com/FahadShah7/MedLabel.git && cd MedLabel
 docker build -t medlabel . && docker run -p 8000:8000 -e GEMINI_API_KEY=<your-key> medlabel
 ```
 
-Open http://127.0.0.1:8000/docs. `docker ps` shows the container as `(healthy)` once `/health` passes. The `GEMINI_API_KEY` is optional: without it, `/predict`, `/explain`, `/health` and `/stats` work and the two Gemini endpoints return 503. Get a key from [Google AI Studio](https://aistudio.google.com/apikey).
+Open http://127.0.0.1:8000/docs. `docker ps` shows the container as `(healthy)` once `/health` passes. The `GEMINI_API_KEY` is optional: without it, `/predict`, `/explain` (BM25 search), `/health` and `/stats` work, while the two Gemini endpoints and semantic or hybrid search return 503. Get a key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 ### Local Python (Python 3.11+)
 
@@ -51,7 +53,8 @@ To rebuild everything from scratch:
 ```bash
 make data    # downloads PubMedQA, validates, writes the train/test split
 make train   # trains 11 configurations, logs to MLflow, saves and registers the best model
-make eval    # evaluates Gemini variations in MLflow (needs GEMINI_API_KEY)
+make index   # embeds the 1,000 abstracts for semantic search (needs GEMINI_API_KEY)
+make eval    # evaluates Gemini variations and retrieval in MLflow (needs GEMINI_API_KEY)
 make mlflow  # opens the MLflow UI at http://127.0.0.1:5000
 ```
 
@@ -110,6 +113,7 @@ For the Gemini models there is no training, so we evaluate **inference**. `src/e
 | `temperature` | Generative temperature 0.0, 0.5, 1.0, 1.5, 2.0, each run twice to measure label stability | 5 |
 | `context` | No abstract, BM25-retrieved abstracts (excluding the question's own), the gold abstract. For all three model types | 9 |
 | `parameters` | `top_p` 0.3 vs 0.95 at temperature 1.0; number of retrieved passages k = 1, 3, 5 | 5 |
+| `retrieval` | How the top 3 abstracts are found: BM25 keywords, semantic (Gemini embeddings) or hybrid. For all three model types | 9 |
 
 Every run logs its parameters, metrics (macro-F1, accuracy, per-class F1, invalid-output rate, "maybe" rate, mean confidence, expected calibration error, average and p95 latency, input and output tokens, label stability, and **LLM-as-a-judge faithfulness** of the generated rationale scored by Gemini Decision 1), plus a predictions table, a confusion matrix, the exact prompt text and example traces. Gemini responses are cached in `.cache/` so reruns are free and reproducible.
 
@@ -125,6 +129,7 @@ Baseline: `gemini-3.5-flash-lite`, prompt `criteria`, temperature 0, top_p 0.95,
 | Generative, `plain` prompt | 0.549 | 0.76 | 0.178 | 0.06 |
 | Gemini Decision 1, `expert` prompt | 0.544 | 0.62 | 0.147 | 0.30 |
 | Generative, `expert` prompt | 0.499 | 0.68 | 0.259 | 0.08 |
+| Generative `gemini-3.1-flash-lite`, `criteria` prompt | 0.545 | 0.64 | 0.289 | 0.24 |
 | TF-IDF + logistic regression (gold abstract) | 0.340 | 0.48 | 0.105 | 0.06 |
 | Gemini Decision 1, retrieved context (k = 5) | 0.252 | 0.32 | 0.218 | 0.20 |
 | Generative, retrieved context | 0.197 | 0.36 | 0.652 | 0.02 |
@@ -135,8 +140,51 @@ Baseline: `gemini-3.5-flash-lite`, prompt `criteria`, temperature 0, top_p 0.95,
 - **Evidence matters more than anything else.** With no abstract the generative model answers "maybe" every time. Retrieved abstracts from other questions mislead both Gemini models, and more passages (k = 1 → 5) helps only slightly.
 - **Both Gemini models beat the classical baseline** by about 0.25 macro-F1 on the same questions.
 - **Rationales are faithful:** LLM-as-a-judge faithfulness is 0.86–0.88 when the model sees an abstract, and 0.41 without one.
-- At temperature 0 the generative model still changed its label on 6% of questions between repeats (label stability 0.94).
+- **The newer `gemini-3.5-flash-lite` beats `gemini-3.1-flash-lite`** (0.587 vs 0.545 macro-F1) and is better calibrated.
+- **Temperature and top_p barely matter for this task.** Each temperature was run twice on the same questions:
+
+| Temperature | Macro-F1 | Accuracy | Label stability |
+|---|---|---|---|
+| 0.0 | 0.587 | 0.72 | 0.94 |
+| 0.5 | 0.599 | 0.74 | 0.96 |
+| 1.0 | 0.603 | 0.74 | 0.96 |
+| 1.5 | 0.591 | 0.72 | 0.98 |
+| 2.0 | 0.591 | 0.72 | 0.98 |
+
+  Even at temperature 0 the model changed its label on 6% of questions between repeats, and even at 2.0 it stayed consistent on 98%: a three-way answer with a strict JSON schema leaves little room for sampling to matter. At temperature 1.0, `top_p` 0.3 scored 0.580 against 0.603 for 0.95.
 - Latency figures include waits caused by free-tier rate limits, so they are not comparable between runs. With only 5 "maybe" questions, differences of a few points are not significant.
+
+## Retrieval: BM25, semantic and hybrid (MLflow experiment `medlabel-retrieval`)
+
+`src/retrieval.py` finds supporting abstracts in three ways:
+
+- **BM25:** keyword matching, the Milestone 1 method. Needs no API key.
+- **Semantic:** every abstract is embedded once with `gemini-embedding-001` (768 dimensions) by `python -m src.build_index`, saved to `models/corpus_embeddings.npz` and shipped in the Docker image. At query time only the question is embedded, and abstracts are ranked by cosine similarity. This finds abstracts that use different words for the same idea, such as "myocardial infarction" for "heart attack".
+- **Hybrid:** reciprocal rank fusion of the two rankings (each abstract scores 1/(60 + rank) in each list, summed), so an abstract ranked well by both methods comes first.
+
+Each PubMedQA question comes with the abstract that answers it, so retrieval quality can be measured directly: for the 200 test questions, searched against all 1,000 abstracts, `--retrieval-quality` logs recall@1, 3, 5 and 10 and mean reciprocal rank (MRR) for each method.
+
+**Finding the right abstract** (200 test questions, 1,000 abstracts):
+
+| Method | Recall@1 | Recall@5 | MRR |
+|---|---|---|---|
+| BM25 | 0.950 | 0.980 | 0.964 |
+| **Semantic** | **0.995** | **1.000** | **0.998** |
+| Hybrid | 0.970 | 0.990 | 0.978 |
+
+**Answering with retrieved abstracts** (`retrieval` sweep, 50 questions, the question's own abstract excluded so the model only sees other papers):
+
+| Model | BM25 | Semantic | Hybrid |
+|---|---|---|---|
+| TF-IDF + logistic regression | 0.300 | 0.274 | 0.293 |
+| Gemini Decision 1 | 0.238 | 0.206 | 0.245 |
+| Generative Gemini | 0.197 | 0.164 | 0.164 |
+
+(macro-F1; with the question's own abstract the same models score 0.340, 0.582 and 0.587.)
+
+- **Semantic search finds the right abstract almost every time** (99.5% first place against 95% for BM25), so it is the better choice when the answering paper is in the corpus. Hybrid sits between the two here because BM25 pulls it down.
+- **Other papers do not answer the question, whichever method finds them.** With the question's own abstract removed, every model drops to 0.16–0.30 macro-F1. Semantic search finds papers on the same topic, but a related study's conclusion is not this study's answer, so the label stays close to chance. The value of retrieval in this project is finding *the* study, which semantic search does best.
+- The generative model's rationales stay faithful to whatever it was shown (judge score 0.89 with semantic passages), so its errors here come from the evidence, not from inventing claims.
 
 ## API
 
@@ -145,12 +193,12 @@ Baseline: `gemini-3.5-flash-lite`, prompt `criteria`, temperature 0, top_p 0.95,
 | `/predict` | POST | TF-IDF model: label (yes, no or maybe), confidence and class probabilities |
 | `/decide` | POST | Gemini Decision 1: label with calibrated probabilities |
 | `/answer` | POST | Generative Gemini: label, confidence and a one-sentence rationale, plus the passages used. Optional `model` and `temperature` (0 to 2) |
-| `/explain` | POST | Top 3 supporting PubMed passages (BM25 retrieval) |
-| `/health` | GET | Service status, model version, corpus size, whether Gemini is configured |
+| `/explain` | POST | Top supporting PubMed passages, by BM25, semantic or hybrid search |
+| `/health` | GET | Service status, model version, corpus size, whether Gemini and the semantic index are available |
 | `/stats` | GET | Request count, error count, average latency, per-endpoint latency, predicted label counts |
 | `/metrics` | GET | Request count and average latency (kept from Milestone 1) |
 
-All `POST` endpoints take a `question` (5 to 1,000 characters) and an optional `context`. When no context is sent, the service retrieves the top 3 passages with BM25 and uses them; `context_source` says whether the context was `provided` or `retrieved`. Invalid input returns HTTP 422.
+All `POST` endpoints take a `question` (5 to 1,000 characters) and an optional `context`. When no context is sent, the service retrieves passages and uses them; `context_source` says whether the context was `provided` or `retrieved`. Two optional fields control retrieval: `retrieval` (`bm25` by default, `semantic` or `hybrid`) and `k` (passages, 1 to 10, default 3). Invalid input returns HTTP 422.
 
 ### Example requests against the deployed service
 
@@ -170,6 +218,12 @@ curl -X POST $URL/answer -H "Content-Type: application/json" \
 
 curl -X POST $URL/explain -H "Content-Type: application/json" \
   -d '{"question": "Does smoking cause lung cancer?"}'
+
+curl -X POST $URL/explain -H "Content-Type: application/json" \
+  -d '{"question": "Do statins prevent heart attacks?", "retrieval": "hybrid", "k": 5}'
+
+curl -X POST $URL/decide -H "Content-Type: application/json" \
+  -d '{"question": "Do statins prevent heart attacks?", "retrieval": "semantic"}'
 
 curl $URL/stats
 ```
@@ -209,7 +263,7 @@ Deployment is on [Render](https://render.com) using `render.yaml`: a Docker web 
 
 - **What:** a systematic comparison of three ways to answer the same yes/no/maybe question: TF-IDF with logistic regression, Gemini Decision 1 (a scoring model with calibrated probabilities), and generative Gemini (label plus a written rationale). Every variation is an MLflow run.
 - **Why it suits this project:** the task is a closed three-way decision, which is exactly what Gemini Decision 1 is built for, while generative models add an explanation that a clinician-facing tool would need. The course asks LLM projects to test prompts, models, parameters and temperature; our sweeps cover all four, plus the effect of the evidence itself (no abstract vs retrieved vs gold).
-- **What is built and compared:** 11 classical training runs with model registry, and 29 LLM inference run configurations comparing accuracy (macro-F1), calibration error, label stability across repeats, latency, token cost and rationale faithfulness judged by an LLM.
+- **What is built and compared:** 11 classical training runs with model registry, 38 LLM inference runs, and BM25 vs semantic vs hybrid retrieval (recall@k and MRR). The LLM runs compare accuracy (macro-F1), calibration error, label stability across repeats, latency, token cost and rationale faithfulness judged by an LLM.
 - **How it is demonstrated:** the MLflow UI (run comparison charts, per-run confusion matrices, prediction tables, traces), and the live `/predict`, `/decide` and `/answer` endpoints answering the same question side by side.
 - **Next steps for the final presentation:** run the sweeps on the full 200-question test set, add a confidence threshold that routes low-confidence answers to "needs human review", and use the faithfulness judge to choose the prompt used by `/answer`.
 
@@ -218,14 +272,16 @@ Deployment is on [Render](https://render.com) using `render.yaml`: a Docker web 
 `make test` (or `pytest -v`) runs 31 tests:
 - **Data** (`tests/test_prepare_data.py`): validation rules, duplicate `pubid`s, stratified and reproducible split, profiling.
 - **API** (`tests/test_api.py`): model loading, `/predict`, `/explain`, input validation (422), `/health`, `/metrics` and `/stats` counting requests and errors.
-- **Gemini** (`tests/test_gemini.py`): `/decide` and `/answer` with a fake Gemini client, temperature and model validation, invalid model output (502), missing key (503), prompt variants and the judge.
+- **Gemini** (`tests/test_gemini.py`): `/decide` and `/answer` with a fake Gemini client, temperature and model validation, invalid model output (502), missing key (503), prompt variants and the judge; semantic and hybrid search with fake embeddings, including rank fusion, excluding a question's own abstract, and 503 without a key or index.
 
 ## Project structure
 
 - `src/prepare_data.py`: download, validate and split the data
 - `src/train.py`: train, evaluate, track in MLflow, save and register the best model
 - `src/llm.py`: Gemini Decision 1 and generative Gemini clients, prompts and the judge
-- `src/evaluate_llm.py`: Gemini evaluation sweeps logged to MLflow
+- `src/evaluate_llm.py`: Gemini evaluation sweeps and retrieval quality logged to MLflow
+- `src/retrieval.py`: BM25, semantic and hybrid search
+- `src/build_index.py`: embeds the abstracts into `models/corpus_embeddings.npz`
 - `src/app.py`: FastAPI service
 - `tests/`: pytest suite
 - `models/`: versioned model artifacts (`v1`, `v2`) and their metrics
