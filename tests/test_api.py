@@ -19,6 +19,12 @@ def test_health(client):
     assert body["corpus_size"] > 0
 
 
+def test_root_redirects_to_docs(client):
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/docs"
+
+
 def test_model_loaded_with_expected_classes(client):
     assert list(state["model"].classes_) == ["maybe", "no", "yes"]
 

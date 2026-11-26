@@ -8,6 +8,7 @@ from typing import Literal
 
 import joblib
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from src import llm
@@ -167,6 +168,11 @@ def gemini_client():
     if "gemini" not in state:
         raise HTTPException(status_code=503, detail="Gemini is not configured (GEMINI_API_KEY)")
     return state["gemini"]
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
